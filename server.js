@@ -197,33 +197,14 @@ const args = yargs(process.argv.slice(2))
     d: "debug"
   })
   .default({
-    modo: "FORK",
+    modo: "prod",
     puerto: 8080,
     debug: false
   })
   .argv
 
   
-const server = httpserver.listen(args.p, args.m,() => {
+const server = httpserver.listen(args.p, () => {
     console.log(`Server is running on port: ${server.address().port}`);
 });
 server.on('error', error => console.log(`error running server: ${error}`));
-
-
-
-// const PORT = parseInt(process.argv[2]) || 8080
-
-// app.use(express.json());
-// app.use(express.urlencoded({extended:false}))
-
-// // app.get('/', (req, res) => {
-// //     res.send(`Bienvenido, Servidor escuchando puerto: ${PORT}, proceso: ${process.pid}`)
-// // })
-// app.get('/api/randoms', (req, res) => {
-//     res.send(`Bienvenido, Servidor escuchando puerto: ${PORT}, proceso: ${process.pid}`)
-
-// })
-
-// app.listen(PORT, () => {
-//     console.log(`Servidor escuchando puerto: ${PORT}, proceso: ${process.pid}`)
-// })
