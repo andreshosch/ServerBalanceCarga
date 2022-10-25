@@ -204,7 +204,7 @@ const args = yargs(process.argv.slice(2))
   .argv
 
   
-const server = httpserver.listen(args.p, () => {
+const server = httpserver.listen(args.p, args.m,() => {
     console.log(`Server is running on port: ${server.address().port}`);
 });
 server.on('error', error => console.log(`error running server: ${error}`));
