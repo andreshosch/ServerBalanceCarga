@@ -37,6 +37,7 @@ function renderInfo(data) {
         CARPETA PROYECTO: ${element.carpeta}<br><br>
         PATH: ${element.path}<br><br>
         ARGUMENTO: ${element.argumento}<br><br>
+        PROCESADORES: ${element.procesadores}<br><br>
         </div><br><br>`);
     }).join("");
     info.innerHTML += html;

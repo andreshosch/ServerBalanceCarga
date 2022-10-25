@@ -27,7 +27,8 @@ routerProducto.
          sistemaOperativo:process.platform,
          carpeta: process.cwd(),
          path:process.argv[0],
-         argumento: process.argv.slice(2)
+         argumento: process.argv.slice(2),
+         procesadores: require("os").cpus().length
         }]
         if (info)
      res.status(200).json(info);
