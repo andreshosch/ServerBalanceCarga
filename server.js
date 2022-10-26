@@ -2,19 +2,90 @@ const express=require("express");
 const routerProducto=require("./src/routes/routes.js")
 const{Server:http}=require ("http");
 const {Server:ioServer}=require ("socket.io");
-const User=require("./src/schema/schemaUser.js")
-const {saveMsjs, getMsjs}=require ("./src/controllers/mensajes.js")
+const {saveMsjs, getMsjs}=require ("./src/controllers/mensajes.js");
+const cookieParser=require("cookie-parser")
 const session =require("express-session")
-const MongoStore=require("connect-mongo");
+const MongoStore=require("connect-mongo")
+
+const { fork } = require('child_process')
+const child = fork("./child.js")
+
+
+
 const LocalStrategy = require('passport-local').Strategy;
 const passport = require("passport");
 const { comparePassword, hashPassword } = require("./utils")
+const User=require("./src/schema/schemaUser.js")
+
 const { Types } = require("mongoose");
-const Swal = require('sweetalert2')
+//==================
+const cluster = require("cluster");
+const {cpus} = require('os');
+const cpuNum = cpus().length;
+//==================
+
 const app = express();
 const httpserver = http(app)
 const io = new ioServer(httpserver)
 
+// app.use(express.static('public'));
+
+
+
+// const args = parseArgs(process.argv.slice(2));
+// const args = process.argv.slice(2);
+// console.log(args)
+
+// const PORT = args.length > 0 ? args[0] : 8080;
+
+//const PORT = process.env.PORT || 8080;
+
+
+
+const yargs = require("yargs");
+const args = yargs(process.argv.slice(2))
+
+  .alias({
+    m: "modo",
+    p: "puerto",
+    d: "debug",
+  })
+  .default({
+    modo: "FORK",
+    puerto: 8080,
+    debug: false
+  })
+  .argv
+
+const modoCluster = args.m === 'CLUSTER';
+
+if(modoCluster){
+  console.log("Se iniciará en modo CLUSTER")
+}
+else{
+  console.log("Se iniciará en modo FORK")
+}
+
+/////////////////////////////////////////
+
+if (modoCluster && cluster.isPrimary) {
+  console.log(`Cluster iniciado. CPUS: ${cpuNum}`);
+  console.log(`PID: ${process.pid}`);
+  for (let i = 0; i < cpuNum; i++) {
+    cluster.fork();
+  }
+
+  cluster.on("exit", worker => {
+    console.log(`${new Date().toLocaleString()}: Worker ${worker.process.pid} died`);
+    cluster.fork();
+  });
+} else {
+  const app = express();
+  const httpserver = http(app)
+  const io = new ioServer(httpserver)
+
+
+/////////////////////////////////////////////INICIO
 
 app.use("/public", express.static('./public/'));
 app.use(express.json());
@@ -22,35 +93,35 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/', routerProducto);
 
+
 app.use(session({
-    secret: 'STRING_TO_SIGN_SESSION_ID',
-    resave: false,
-    saveUninitialized: true,
-    store: new MongoStore({
-      mongoUrl:process.env.URL_BD,
-      retries: 0,
-      ttl: 10 * 60 , // 10 min
-    }),
-  })
+  secret: 'TanatosAlado',
+  resave: false,
+  saveUninitialized: true,
+  store: new MongoStore({
+    mongoUrl:process.env.URL_BD,
+    retries: 0,
+    ttl: 10 * 60 , // 10 min
+  }),
+})
 );
+//============
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-//LOGUEO DE USUARIO
 
 passport.use("login", new LocalStrategy(async (username, password, done) => {
-    const user = await User.findOne({ username });
-    if (user==""){
-    const passHash = user.password;
-     if (!user || !comparePassword(password, passHash)) {
-       return done(null, null, { message: "Invalid username or password" });
-     }
-    }
-    return done(null, user);
-  }));
+  const user = await User.findOne({ username });
+  if (user==""){
+  const passHash = user.password;
+   if (!user || !comparePassword(password, passHash)) {
+     return done(null, null, { message: "Invalid username or password" });
+   }
+  }
+  return done(null, user);
+}));
 
-//REGISTRO DE USUARIO
 
 passport.use("signup", new LocalStrategy({
     passReqToCallback: true
@@ -77,27 +148,26 @@ passport.use("signup", new LocalStrategy({
     done(null, user);
   });
 
-   
-//   //RECUPERO EL NOMBRE YA EN SESION INICIADA
-app.get('/loginEnv', (req, res) => {
-  process.env.USER=req.user.address;
-  const user = process.env.USER;
-  
-  
-//     const usuario=process.env.USER;
-  res.send({
-      user
-  })
-})
-
 //RECUPERO EL NOMBRE YA EN SESION INICIADA
-app.get('/getUserNameEnv', (req, res) => {
-  const user = process.env.USER;
+app.get('/loginEnv', (req, res) => {
+    process.env.USER=req.user.address;
+    const user = process.env.USER;
+    
     res.send({
-      user
+        user
+    })
   })
-})
+  
+  //RECUPERO EL NOMBRE YA EN SESION INICIADA
+  app.get('/getUserNameEnv', (req, res) => {
+    const user = process.env.USER;
+      res.send({
+        user
+    })
+  })
+//============
 
+//============
 
 app.get("/", (req,res)=>{
 
@@ -117,15 +187,60 @@ app.get("/", (req,res)=>{
 })
 
 io.on('connection', async (socket) => {
-    console.log('Usuario conectado');
-    socket.on('enviarMensaje', (msj) => {
-        saveMsjs(msj);
-    })
+  console.log('Usuario conectado');
+  socket.on('enviarMensaje', (msj) => {
+      saveMsjs(msj);
+  })
 
-    socket.emit ('mensajes', await getMsjs());
+  socket.emit ('mensajes', await getMsjs());
 })
 
-// // DESLOGUEO DE USUARIO
+
+
+// DEFINO EL NOMBRE DE USUARIO DE LA SESSION
+
+app.post('/setUserName', (req, res) => {
+    req.session.user = req.body.user;
+    process.env.USER=req.body.user;
+    const usuario=process.env.USER;
+    res.redirect('/');
+})
+
+
+
+//TOMO EL USERNAME POR SESSION
+
+app.get("/getUserName",(req,res)=>{
+    try{
+        if (req.session.user){
+            const user=process.env.USER;
+            res.send({
+                user,
+                
+            })
+        }
+        else
+        res.send({
+            username:"no existe el usuario"
+        })
+    }
+    catch(error){
+        console.log(error)
+    }
+})
+
+//RECUPERO EL NOMBRE YA EN SESION INICIADA
+app.get('/getUserNameEnv', (req, res) => {
+    const user = process.env.USER;
+    res.send({
+        user
+    })
+})
+
+
+
+
+// DESLOGUEO DE USUARIO
 
 app.get('/logout', (req, res) => {
     try {
@@ -148,14 +263,38 @@ app.get('/logoutMsj', (req, res) => {
         console.log(err);
     }
 })
- 
-  app.get("/login", (req, res) => {
+
+
+// ==============
+app.get("/info", (req,res) => {
+  res.sendFile(__dirname + "/views/info.html");
+})
+
+
+app.get("/api/random", (req,res) => {
+  const losRandom = req.query.num ||  500
+  child.send(losRandom)
+  child.on('message', (msg) => {
+    res.end(msg)
+  })
+
+// res.sendFile(__dirname + "/views/aleatorios.html")
+})
+
+
+// routerProducto.post("/actualizar", isAdmin, (req,res) => {
+//   myWine.updateProduct(req.body.id, req.body)
+//   .then((products) => res.render("productos_id",products))
+// })
+
+
+app.get("/login", (req, res) => {
     const user=req.session.user;
     res.sendFile(__dirname + "/views/login.html");
   });
 
   app.get("/signup", (req, res) => {
-    res.sendFile(__dirname + "/views/register.html");
+    res.sendFile(__dirname + "/views/signup.html");
   });
 
   app.get("/loginFail", (req, res) => {
@@ -165,11 +304,9 @@ app.get('/logoutMsj', (req, res) => {
   app.get("/signupFail", (req, res) => {
     res.sendFile(__dirname + "/views/signupFail.html");
   });
-  app.get("/info", (req, res) => {
-    res.sendFile(__dirname + "/views/info.html");   
-  });
 
-   app.post("/signup", passport.authenticate("signup", {
+
+  app.post("/signup", passport.authenticate("signup", {
     failureRedirect: "/signupFail",
   }) , (req, res) => {  
     req.session.user = req.user;
@@ -182,29 +319,20 @@ app.get('/logoutMsj', (req, res) => {
       req.session.user = req.user;
       res.redirect('/');
   });
+// ==============
+
+/////////////////////////////////////////////FIN
 
 
-
-//   //PASO EL NUMERO DE PUERTO CON YARDS, POR DEFECTO TOMA EL 8080
-
-//   // correr el server de la siguiente manera "node server.js  -m dev -p nroPuerto"
-const yargs = require("yargs");
-const args = yargs(process.argv.slice(2))
-  
-  .alias({
-    m: "modo",
-    p: "puerto",
-    d: "debug"
-  })
-  .default({
-    modo: "prod",
-    puerto: 8080,
-    debug: false
-  })
-  .argv
-
-  
-const server = httpserver.listen(args.p, () => {
+  const server = httpserver.listen(args.p, () => {
     console.log(`Server is running on port: ${server.address().port}`);
 });
 server.on('error', error => console.log(`error running server: ${error}`));
+
+}
+////////////////////////////////////////////////
+
+//   const server = httpserver.listen(args.p, () => {
+//     console.log(`Server is running on port: ${server.address().port}`);
+// });
+// server.on('error', error => console.log(`error running server: ${error}`));
